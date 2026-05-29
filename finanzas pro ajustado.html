@@ -1,0 +1,1986 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finanzas Pro - Control de Finanzas Personales</title>
+    
+    <!-- Tailwind CSS para el diseño responsivo moderno -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons para toda la iconografía de la app -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- React y ReactDOM desde CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Babel para compilar JSX en el navegador en tiempo real -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Importación de SDKs de Firebase v11.6.1 (Auth y Firestore) con salvaguarda robusta -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInWithEmailAndPassword, 
+            createUserWithEmailAndPassword, 
+            signOut, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            collection, 
+            addDoc, 
+            onSnapshot, 
+            query, 
+            deleteDoc, 
+            doc, 
+            setDoc 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Exponer Firebase al entorno global de la página
+        window.FirebaseSDK = {
+            initializeApp,
+            getAuth,
+            signInWithEmailAndPassword,
+            createUserWithEmailAndPassword,
+            signOut,
+            onAuthStateChanged,
+            getFirestore,
+            collection,
+            addDoc,
+            onSnapshot,
+            query,
+            deleteDoc,
+            doc,
+            setDoc
+        };
+    </script>
+
+    <style>
+        /* Estilos personalizados para animaciones y scrollbar sutil */
+        .animate-fade-in {
+            animation: fadeIn 0.25s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* Ocultar flechas en los inputs numéricos nativos */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen">
+
+    <!-- Nodo principal donde se montará la App de React -->
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Esperamos a que los SDKs de Firebase o el entorno global estén disponibles
+        const checkFirebaseInterval = setInterval(() => {
+            if (window.FirebaseSDK) {
+                clearInterval(checkFirebaseInterval);
+                initReactApplication();
+            }
+        }, 100);
+
+        function initReactApplication() {
+            const { useState, useEffect, useMemo, useRef } = React;
+            const { 
+                initializeApp, getAuth, signInWithEmailAndPassword, 
+                createUserWithEmailAndPassword, signOut, onAuthStateChanged, 
+                getFirestore, collection, addDoc, onSnapshot, query, deleteDoc, doc, setDoc 
+            } = window.FirebaseSDK;
+
+            // ═══════════════════════════════════════════════════════════════
+            // 🔧  CONFIGURACIÓN DE FIREBASE — EDITA ESTA SECCIÓN
+            //     Reemplaza cada valor con los datos de tu proyecto Firebase.
+            //     Consola Firebase → ⚙️ Project Settings → Your apps → Config
+            //     Después de editar, guarda y sube el archivo a Netlify.
+            // ═══════════════════════════════════════════════════════════════
+            const FIREBASE_CONFIG = {
+                apiKey:            "AIzaSyAWKe1e_sPdTlGjP8CqXSPo-9dQItu2ScE",
+                authDomain:        "finanzas-personales-b5983.firebaseapp.com",
+                projectId:         "finanzas-personales-b5983",
+                storageBucket:     "finanzas-personales-b5983.firebasestorage.app",
+                messagingSenderId: "900800646807",
+                appId:             "1:900800646807:web:c8734bd2fdbfa59d4a63d2"
+            };
+            // ═══════════════════════════════════════════════════════════════
+
+            // Cadena de prioridad para resolver la configuración activa:
+            //  1. Config hardcodeada arriba (si ya fue editada con valores reales)
+            //  2. Variable de entorno inyectada por Netlify (__firebase_config)
+            //  3. Config guardada por el usuario en localStorage (panel UI)
+            //  4. null → modo demostración local
+            const _hardcoded  = FIREBASE_CONFIG.apiKey !== "PEGA-TU-API-KEY-AQUÍ" ? FIREBASE_CONFIG : null;
+            const _envConfig  = (() => { try { return typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null; } catch(e) { return null; } })();
+            const _savedLocal = (() => { try { return JSON.parse(localStorage.getItem('firebase_config_saved') || 'null'); } catch(e) { return null; } })();
+
+            const rawFirebaseConfig = (_hardcoded?.apiKey)  ? _hardcoded
+                                    : (_envConfig?.apiKey)  ? _envConfig
+                                    : (_savedLocal?.apiKey) ? _savedLocal
+                                    : null;
+
+            // Evaluamos si las credenciales de Firebase son válidas (tienen API Key)
+            const hasValidApiKey = !!(rawFirebaseConfig && rawFirebaseConfig.apiKey && rawFirebaseConfig.apiKey.trim() !== "");
+            
+            let app = null;
+            let auth = null;
+            let db = null;
+            const appId = 'finanzas-familia-app';
+
+            if (hasValidApiKey) {
+                try {
+                    app = initializeApp(rawFirebaseConfig);
+                    auth = getAuth(app);
+                    db = getFirestore(app);
+                } catch (e) {
+                    console.error("Error al inicializar Firebase Real:", e);
+                }
+            }
+
+            // --- CATEGORÍAS INICIALES --- vacías: cada usuario crea las suyas
+            const INITIAL_CATEGORIES = {
+                Ingreso: [],
+                Gasto:   []
+            };
+
+            const MONTH_NAMES = [
+                'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+            ];
+
+            // Formateador monetario COP
+            const formatCOP = (monto) => {
+                return new Intl.NumberFormat('es-CO', {
+                    style: 'currency',
+                    currency: 'COP',
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
+                }).format(monto || 0);
+            };
+
+            const cleanCurrencyToNumber = (valString) => {
+                if (valString === undefined || valString === null) return 0;
+                const cleaned = valString.toString().replace(/[^0-9]/g, '');
+                return parseFloat(cleaned) || 0;
+            };
+
+            const formatInputOnTheFly = (value) => {
+                if (!value) return '';
+                const num = cleanCurrencyToNumber(value);
+                if (num === 0) return '';
+                return new Intl.NumberFormat('es-CO', {
+                    style: 'currency',
+                    currency: 'COP',
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
+                }).format(num);
+            };
+
+            // Componente de Iconos Portable
+            function AppIcon({ name, className = "w-5 h-5", size = 20 }) {
+                useEffect(() => {
+                    if (window.lucide) {
+                        window.lucide.createIcons();
+                    }
+                }, [name]);
+                return <i data-lucide={name} class={className} style={{ width: size, height: size }}></i>;
+            }
+
+            // Componente Principal
+            function MainApp() {
+                const [user, setUser] = useState(null);
+                const [authLoading, setAuthLoading] = useState(true);
+                
+                // Estados de login
+                const [isRegistering, setIsRegistering] = useState(false);
+                const [email, setEmail] = useState('');
+                const [password, setPassword] = useState('');
+
+                // Estados para el panel de configuración de Firebase
+                const [showFirebasePanel, setShowFirebasePanel] = useState(false);
+                const [fbConfigInputs, setFbConfigInputs] = useState({
+                    apiKey: '', authDomain: '', projectId: '',
+                    storageBucket: '', messagingSenderId: '', appId: ''
+                });
+                const [fbSaveStatus, setFbSaveStatus] = useState('');
+
+                // Estados de la app
+                const [transactions, setTransactions] = useState([]);
+                const [customCategories, setCustomCategories] = useState({ Ingreso: [], Gasto: [] });
+                const [budgets, setBudgets] = useState({}); 
+                const [cashFlowData, setCashFlowData] = useState({
+                    juan: 0,
+                    sindy: 0,
+                    otros: 0,
+                    tarjetaCredito: 0,
+                    excluidos: []
+                });
+
+                const [activeTab, setActiveTab] = useState('dashboard'); 
+                const [loading, setLoading] = useState(false);
+
+                // Filtros de tiempo globales
+                const [filterMode, setFilterMode] = useState('single'); 
+                const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth()); 
+                const [rangeStart, setRangeStart] = useState(0);
+                const [rangeEnd, setRangeEnd] = useState(11);
+                const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+                // Alertas y Confirmaciones
+                const [toast, setToast] = useState(null);
+                const [confirmModal, setConfirmModal] = useState(null);
+
+                // Estados de formularios
+                const [formData, setFormData] = useState({
+                    type: 'Gasto',
+                    date: new Date().toISOString().split('T')[0],
+                    category: '',
+                    amountText: '', 
+                    description: ''
+                });
+
+                const [newCatName, setNewCatName] = useState('');
+                const [newCatType, setNewCatType] = useState('Gasto');
+
+                // Estado para categorías preestablecidas editables
+                const [presetCategories, setPresetCategories] = useState({
+                    Ingreso: [...INITIAL_CATEGORIES.Ingreso],
+                    Gasto: [...INITIAL_CATEGORIES.Gasto]
+                });
+                // Filtro activo en el panel de categorías: 'Gasto' | 'Ingreso'
+                const [catViewType, setCatViewType] = useState('Gasto');
+                // Categoría en modo edición inline: { type, oldName, newName, isPreset }
+                const [editingCat, setEditingCat] = useState(null);
+
+                const [selectedBudgetCategory, setSelectedBudgetCategory] = useState('');
+                const [targetBudgetMonth, setTargetBudgetMonth] = useState('all'); 
+                const [bulkBudgetValueText, setBulkBudgetValueText] = useState('');
+
+                const [cashInputs, setCashInputs] = useState({
+                    juan: '',
+                    sindy: '',
+                    otros: '',
+                    tarjetaCredito: ''
+                });
+
+                // Unión de categorías preestablecidas (editables) + personalizadas
+                const mergedCategories = useMemo(() => {
+                    return {
+                        Ingreso: [...presetCategories.Ingreso, ...customCategories.Ingreso],
+                        Gasto: [...presetCategories.Gasto, ...customCategories.Gasto]
+                    };
+                }, [customCategories, presetCategories]);
+
+                // Sincronizar categorías en el selector de transacciones
+                useEffect(() => {
+                    const list = mergedCategories[formData.type];
+                    if (list && list.length > 0) {
+                        if (!formData.category || !list.includes(formData.category)) {
+                            setFormData(prev => ({
+                                ...prev,
+                                category: list[0]
+                            }));
+                        }
+                    }
+                }, [formData.type, mergedCategories]);
+
+                const showToast = (message, type = 'success') => {
+                    setToast({ message, type });
+                    setTimeout(() => setToast(null), 4000);
+                };
+
+                // --- MANEJADOR DE PERSISTENCIA SEGURA (FIREBASE / LOCALSTORAGE) ---
+                useEffect(() => {
+                    if (hasValidApiKey && auth) {
+                        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+                            setUser(currentUser);
+                            setAuthLoading(false);
+                        });
+                        return () => unsubscribe();
+                    } else {
+                        // Modo Local (Sin API Key o en Preview de Canvas sin conectar)
+                        const localUser = localStorage.getItem('local_finanzas_user');
+                        if (localUser) {
+                            setUser(JSON.parse(localUser));
+                        }
+                        setAuthLoading(false);
+                    }
+                }, []);
+
+                const monthlyKey = `${selectedYear}_${selectedMonth}`;
+
+                // Sincronización en tiempo real o local según disponibilidad de Firebase
+                useEffect(() => {
+                    if (!user) {
+                        setTransactions([]);
+                        setCustomCategories({ Ingreso: [], Gasto: [] });
+                        setBudgets({});
+                        return;
+                    }
+                    setLoading(true);
+
+                    if (hasValidApiKey && db) {
+                        // Sincronizar usando Firestore de Google Cloud
+                        const qTrans = query(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'));
+                        const unsubTrans = onSnapshot(qTrans, (snapshot) => {
+                            const data = [];
+                            snapshot.forEach((doc) => {
+                                data.push({ id: doc.id, ...doc.data() });
+                            });
+                            data.sort((a, b) => new Date(b.date) - new Date(a.date));
+                            setTransactions(data);
+                            setLoading(false);
+                        }, (err) => {
+                            console.error(err);
+                            showToast("Error de conexión al sincronizar movimientos", "error");
+                        });
+
+                        const qCats = query(collection(db, 'artifacts', appId, 'users', user.uid, 'customCategories'));
+                        const unsubCats = onSnapshot(qCats, (snapshot) => {
+                            const parsedCustom = { Ingreso: [], Gasto: [] };
+                            snapshot.forEach((doc) => {
+                                const item = doc.data();
+                                if (parsedCustom[item.type]) {
+                                    parsedCustom[item.type].push(item.name);
+                                }
+                            });
+                            setCustomCategories(parsedCustom);
+                        });
+
+                        const qBudgets = query(collection(db, 'artifacts', appId, 'users', user.uid, 'budgets'));
+                        const unsubBudgets = onSnapshot(qBudgets, (snapshot) => {
+                            const bData = {};
+                            snapshot.forEach((doc) => {
+                                bData[doc.id] = doc.data().months || {};
+                            });
+                            setBudgets(bData);
+                        });
+
+                        const cashDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'cashFlows', monthlyKey);
+                        const unsubCash = onSnapshot(cashDocRef, (snapshot) => {
+                            if (snapshot.exists()) {
+                                const raw = snapshot.data();
+                                const stateData = {
+                                    juan: Number(raw.juan) || 0,
+                                    sindy: Number(raw.sindy) || 0,
+                                    otros: Number(raw.otros) || 0,
+                                    tarjetaCredito: Number(raw.tarjetaCredito) || 0,
+                                    excluidos: Array.isArray(raw.excluidos) ? raw.excluidos : []
+                                };
+                                setCashFlowData(stateData);
+                                setCashInputs({
+                                    juan: formatInputOnTheFly(stateData.juan.toString()),
+                                    sindy: formatInputOnTheFly(stateData.sindy.toString()),
+                                    otros: formatInputOnTheFly(stateData.otros.toString()),
+                                    tarjetaCredito: formatInputOnTheFly(stateData.tarjetaCredito.toString())
+                                });
+                            } else {
+                                setCashFlowData({ juan: 0, sindy: 0, otros: 0, tarjetaCredito: 0, excluidos: [] });
+                                setCashInputs({ juan: '', sindy: '', otros: '', tarjetaCredito: '' });
+                            }
+                        });
+
+                        // Cargar categorías preestablecidas editadas por el usuario
+                        const presetDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'presets', 'categories');
+                        const unsubPresets = onSnapshot(presetDocRef, (snap) => {
+                            if (snap.exists()) {
+                                const data = snap.data();
+                                setPresetCategories({
+                                    Ingreso: Array.isArray(data.Ingreso) ? data.Ingreso : [...INITIAL_CATEGORIES.Ingreso],
+                                    Gasto: Array.isArray(data.Gasto) ? data.Gasto : [...INITIAL_CATEGORIES.Gasto]
+                                });
+                            }
+                        });
+
+                        return () => {
+                            unsubTrans();
+                            unsubCats();
+                            unsubBudgets();
+                            unsubCash();
+                            unsubPresets();
+                        };
+                    } else {
+                        // Sincronizar usando Local Storage estructurado (A prueba de fallos de API Key)
+                        const syncLocalStorage = () => {
+                            const userPrefix = `finanzas_${user.uid}_`;
+                            
+                            // Cargar transacciones
+                            const rawT = localStorage.getItem(`${userPrefix}transactions`);
+                            const listT = rawT ? JSON.parse(rawT) : [];
+                            listT.sort((a, b) => new Date(b.date) - new Date(a.date));
+                            setTransactions(listT);
+
+                            // Cargar categorías
+                            const rawC = localStorage.getItem(`${userPrefix}customCategories`);
+                            setCustomCategories(rawC ? JSON.parse(rawC) : { Ingreso: [], Gasto: [] });
+
+                            // Cargar presupuestos
+                            const rawB = localStorage.getItem(`${userPrefix}budgets`);
+                            setBudgets(rawB ? JSON.parse(rawB) : {});
+
+                            // Cargar categorías preestablecidas editadas
+                            const rawPresets = localStorage.getItem(`${userPrefix}presetCategories`);
+                            if (rawPresets) {
+                                try {
+                                    const p = JSON.parse(rawPresets);
+                                    setPresetCategories({
+                                        Ingreso: Array.isArray(p.Ingreso) ? p.Ingreso : [...INITIAL_CATEGORIES.Ingreso],
+                                        Gasto: Array.isArray(p.Gasto) ? p.Gasto : [...INITIAL_CATEGORIES.Gasto]
+                                    });
+                                } catch(e) { /* mantiene defaults */ }
+                            }
+
+                            // Cargar flujo de efectivo
+                            const rawCash = localStorage.getItem(`${userPrefix}cashFlows_${monthlyKey}`);
+                            if (rawCash) {
+                                const stateData = JSON.parse(rawCash);
+                                setCashFlowData(stateData);
+                                setCashInputs({
+                                    juan: formatInputOnTheFly(stateData.juan.toString()),
+                                    sindy: formatInputOnTheFly(stateData.sindy.toString()),
+                                    otros: formatInputOnTheFly(stateData.otros.toString()),
+                                    tarjetaCredito: formatInputOnTheFly(stateData.tarjetaCredito.toString())
+                                });
+                            } else {
+                                setCashFlowData({ juan: 0, sindy: 0, otros: 0, tarjetaCredito: 0, excluidos: [] });
+                                setCashInputs({ juan: '', sindy: '', otros: '', tarjetaCredito: '' });
+                            }
+                            setLoading(false);
+                        };
+
+                        syncLocalStorage();
+
+                        // Simular detector de cambios en memoria local para que la UI responda instantáneamente
+                        window.addEventListener('localDataChanged', syncLocalStorage);
+                        return () => window.removeEventListener('localDataChanged', syncLocalStorage);
+                    }
+                }, [user, monthlyKey]);
+
+                // Guardar configuración de Firebase en localStorage y recargar
+                const handleSaveFirebaseConfig = () => {
+                    const cfg = fbConfigInputs;
+                    if (!cfg.apiKey.trim() || !cfg.projectId.trim() || !cfg.authDomain.trim()) {
+                        setFbSaveStatus('error');
+                        return;
+                    }
+                    try {
+                        localStorage.setItem('firebase_config_saved', JSON.stringify(cfg));
+                        setFbSaveStatus('saved');
+                        setTimeout(() => window.location.reload(), 1200);
+                    } catch(e) {
+                        setFbSaveStatus('error');
+                    }
+                };
+
+                const handleClearFirebaseConfig = () => {
+                    localStorage.removeItem('firebase_config_saved');
+                    setFbSaveStatus('cleared');
+                    setTimeout(() => window.location.reload(), 800);
+                };
+
+                // ACCIONES AUTH
+                const handleAuthSubmit = async (e) => {
+                    e.preventDefault();
+                    if (!email || !password) {
+                        showToast("Completa todos los campos obligatorios.", "error");
+                        return;
+                    }
+                    setAuthLoading(true);
+
+                    if (hasValidApiKey && auth) {
+                        try {
+                            if (isRegistering) {
+                                await createUserWithEmailAndPassword(auth, email, password);
+                                showToast("¡Usuario registrado con éxito!");
+                            } else {
+                                await signInWithEmailAndPassword(auth, email, password);
+                                showToast("¡Sesión iniciada con éxito!");
+                            }
+                        } catch (error) {
+                            console.error(error);
+                            let msg = "No se pudo autenticar el usuario.";
+                            if (error.code === 'auth/wrong-password') msg = "Contraseña inválida.";
+                            if (error.code === 'auth/user-not-found') msg = "La cuenta no existe.";
+                            if (error.code === 'auth/email-already-in-use') msg = "El correo ya está registrado.";
+                            showToast(msg, "error");
+                        } finally {
+                            setAuthLoading(false);
+                        }
+                    } else {
+                        // Simulación local de login / registro seguro
+                        const dummyUser = { uid: btoa(email), email: email };
+                        localStorage.setItem('local_finanzas_user', JSON.stringify(dummyUser));
+                        setUser(dummyUser);
+                        showToast(isRegistering ? "Cuenta simulada creada de forma local" : "Sesión simulada iniciada localmente");
+                        setAuthLoading(false);
+                    }
+                };
+
+                const handleLogout = async () => {
+                    if (hasValidApiKey && auth) {
+                        try {
+                            await signOut(auth);
+                            showToast("Sesión finalizada correctamente.");
+                        } catch (error) {
+                            showToast("No se pudo cerrar la sesión.", "error");
+                        }
+                    } else {
+                        localStorage.removeItem('local_finanzas_user');
+                        setUser(null);
+                        showToast("Sesión local cerrada");
+                    }
+                };
+
+                // ACCIONES DE NEGOCIO (GASTOS E INGRESOS)
+
+                // ── handleInputChange: faltaba por completo en el código original ──
+                // Sin esta función todos los campos del formulario (fecha, categoría,
+                // monto, descripción, tipo) eran inputs "sordos" — el estado formData
+                // nunca se actualizaba, amountText siempre era '' y la validación
+                // rechazaba el registro sin mostrar un mensaje claro al usuario.
+                const handleInputChange = (e) => {
+                    const { name, value } = e.target;
+                    setFormData(prev => ({
+                        ...prev,
+                        [name]: name === 'amountText' ? formatInputOnTheFly(value) : value
+                    }));
+                };
+
+                const handleTransactionSubmit = async (e) => {
+                    e.preventDefault();
+                    if (!user) return;
+
+                    const amountVal = cleanCurrencyToNumber(formData.amountText);
+                    let selectedCategory = formData.category;
+                    const currentList = mergedCategories[formData.type] || [];
+                    if (!selectedCategory || !currentList.includes(selectedCategory)) {
+                        selectedCategory = currentList[0] || "";
+                    }
+
+                    if (amountVal <= 0 || !selectedCategory || !formData.date) {
+                        showToast("Verifica que el monto sea mayor a cero y que la categoría esté seleccionada.", "error");
+                        return;
+                    }
+
+                    const transactionData = {
+                        type: formData.type,
+                        date: formData.date,
+                        category: selectedCategory,
+                        amount: amountVal,
+                        description: formData.description.trim(),
+                        createdAt: new Date().toISOString()
+                    };
+
+                    if (hasValidApiKey && db) {
+                        try {
+                            await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'transactions'), transactionData);
+                            setFormData(prev => ({ ...prev, amountText: '', description: '' }));
+                            showToast("¡Movimiento financiero guardado con éxito!");
+                            setActiveTab('history');
+                        } catch (error) {
+                            console.error(error);
+                            showToast("Ocurrió un error al guardar el flujo.", "error");
+                        }
+                    } else {
+                        // Persistencia local
+                        const userPrefix = `finanzas_${user.uid}_`;
+                        const current = localStorage.getItem(`${userPrefix}transactions`);
+                        const list = current ? JSON.parse(current) : [];
+                        const newDoc = { id: 'local_' + Date.now(), ...transactionData };
+                        list.push(newDoc);
+                        localStorage.setItem(`${userPrefix}transactions`, JSON.stringify(list));
+                        
+                        setFormData(prev => ({ ...prev, amountText: '', description: '' }));
+                        showToast("¡Movimiento financiero guardado localmente!");
+                        setActiveTab('history');
+                        window.dispatchEvent(new Event('localDataChanged'));
+                    }
+                };
+
+                const triggerDeleteTransaction = (id) => {
+                    setConfirmModal({
+                        title: "Eliminar Registro",
+                        message: "¿Deseas borrar de forma definitiva esta transacción de tu historial?",
+                        onConfirm: async () => {
+                            if (hasValidApiKey && db) {
+                                try {
+                                    await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'transactions', id));
+                                    showToast("Transacción eliminada del historial.");
+                                    setConfirmModal(null);
+                                } catch (error) {
+                                    console.error(error);
+                                    showToast("No se pudo eliminar el registro", "error");
+                                }
+                            } else {
+                                const userPrefix = `finanzas_${user.uid}_`;
+                                const current = localStorage.getItem(`${userPrefix}transactions`);
+                                let list = current ? JSON.parse(current) : [];
+                                list = list.filter(item => item.id !== id);
+                                localStorage.setItem(`${userPrefix}transactions`, JSON.stringify(list));
+                                
+                                showToast("Transacción eliminada localmente.");
+                                setConfirmModal(null);
+                                window.dispatchEvent(new Event('localDataChanged'));
+                            }
+                        }
+                    });
+                };
+
+                const handleAddCategory = async (e) => {
+                    e.preventDefault();
+                    if (!user || !newCatName.trim()) return;
+
+                    const trimmedName = newCatName.trim();
+                    if (mergedCategories[newCatType].includes(trimmedName)) {
+                        showToast("Ese nombre de categoría ya existe.", "error");
+                        return;
+                    }
+
+                    if (hasValidApiKey && db) {
+                        try {
+                            const catDocId = `${newCatType}_${trimmedName.replace(/\s+/g, '_')}`;
+                            await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'customCategories', catDocId), {
+                                name: trimmedName,
+                                type: newCatType,
+                                createdAt: new Date().toISOString()
+                            });
+                            setNewCatName('');
+                            showToast(`Categoría "${trimmedName}" habilitada.`);
+                        } catch (error) {
+                            console.error(error);
+                            showToast("Error de conexión al agregar categoría", "error");
+                        }
+                    } else {
+                        const userPrefix = `finanzas_${user.uid}_`;
+                        const current = localStorage.getItem(`${userPrefix}customCategories`);
+                        const parsed = current ? JSON.parse(current) : { Ingreso: [], Gasto: [] };
+                        parsed[newCatType].push(trimmedName);
+                        localStorage.setItem(`${userPrefix}customCategories`, JSON.stringify(parsed));
+                        
+                        setNewCatName('');
+                        showToast(`Categoría "${trimmedName}" creada localmente.`);
+                        window.dispatchEvent(new Event('localDataChanged'));
+                    }
+                };
+
+                const triggerDeleteCategory = (catName, type) => {
+                    setConfirmModal({
+                        title: "Remover Categoría",
+                        message: `¿Estás seguro de que quieres eliminar la categoría "${catName}"?`,
+                        onConfirm: async () => {
+                            if (hasValidApiKey && db) {
+                                try {
+                                    const catDocId = `${type}_${catName.replace(/\s+/g, '_')}`;
+                                    await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'customCategories', catDocId));
+                                    showToast("Categoría eliminada.");
+                                    setConfirmModal(null);
+                                } catch (error) {
+                                    console.error(error);
+                                    showToast("Error al eliminar categoría", "error");
+                                }
+                            } else {
+                                const userPrefix = `finanzas_${user.uid}_`;
+                                const current = localStorage.getItem(`${userPrefix}customCategories`);
+                                if (current) {
+                                    const parsed = JSON.parse(current);
+                                    parsed[type] = parsed[type].filter(item => item !== catName);
+                                    localStorage.setItem(`${userPrefix}customCategories`, JSON.stringify(parsed));
+                                }
+                                showToast("Categoría eliminada localmente.");
+                                setConfirmModal(null);
+                                window.dispatchEvent(new Event('localDataChanged'));
+                            }
+                        }
+                    });
+                };
+
+                // ── GESTIÓN DE CATEGORÍAS PREESTABLECIDAS ──────────────────────
+
+                const savePresetCategories = async (updated) => {
+                    if (hasValidApiKey && db) {
+                        try {
+                            await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'presets', 'categories'), updated);
+                        } catch(e) { console.error('Error guardando presets:', e); }
+                    } else {
+                        const userPrefix = `finanzas_${user.uid}_`;
+                        localStorage.setItem(`${userPrefix}presetCategories`, JSON.stringify(updated));
+                    }
+                };
+
+                const handleEditSave = async () => {
+                    if (!editingCat) return;
+                    const { type, oldName, newName, isPreset } = editingCat;
+                    const trimmed = (newName || '').trim();
+                    if (!trimmed || trimmed === oldName) { setEditingCat(null); return; }
+                    if (mergedCategories[type].filter(n => n !== oldName).includes(trimmed)) {
+                        showToast("Ya existe una categoría con ese nombre.", "error");
+                        return;
+                    }
+                    if (isPreset) {
+                        const updated = {
+                            ...presetCategories,
+                            [type]: presetCategories[type].map(n => n === oldName ? trimmed : n)
+                        };
+                        setPresetCategories(updated);
+                        await savePresetCategories(updated);
+                        showToast(`Categoría renombrada a "${trimmed}".`);
+                    } else {
+                        if (hasValidApiKey && db) {
+                            try {
+                                const oldId = `${type}_${oldName.replace(/\s+/g, '_')}`;
+                                const newId = `${type}_${trimmed.replace(/\s+/g, '_')}`;
+                                await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'customCategories', oldId));
+                                await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'customCategories', newId), {
+                                    name: trimmed, type, createdAt: new Date().toISOString()
+                                });
+                                showToast(`Categoría renombrada a "${trimmed}".`);
+                            } catch(e) { showToast("Error al renombrar.", "error"); }
+                        } else {
+                            const userPrefix = `finanzas_${user.uid}_`;
+                            const rawC = localStorage.getItem(`${userPrefix}customCategories`);
+                            const parsed = rawC ? JSON.parse(rawC) : { Ingreso: [], Gasto: [] };
+                            parsed[type] = parsed[type].map(n => n === oldName ? trimmed : n);
+                            localStorage.setItem(`${userPrefix}customCategories`, JSON.stringify(parsed));
+                            window.dispatchEvent(new Event('localDataChanged'));
+                            showToast(`Categoría renombrada a "${trimmed}".`);
+                        }
+                    }
+                    setEditingCat(null);
+                };
+
+                const handleDeletePreset = (catName, type) => {
+                    setConfirmModal({
+                        title: "Eliminar Categoría Preestablecida",
+                        message: `¿Eliminar "${catName}"? Los movimientos ya registrados con esta categoría se conservarán, pero no podrás asignarla a nuevos registros.`,
+                        onConfirm: async () => {
+                            const updated = {
+                                ...presetCategories,
+                                [type]: presetCategories[type].filter(n => n !== catName)
+                            };
+                            setPresetCategories(updated);
+                            await savePresetCategories(updated);
+                            showToast("Categoría preestablecida eliminada.");
+                            setConfirmModal(null);
+                        }
+                    });
+                };
+
+                const handleRestoreDefaults = () => {
+                    setConfirmModal({
+                        title: "Restaurar Categorías por Defecto",
+                        message: "¿Restaurar todas las categorías preestablecidas a sus valores originales del sistema? Las categorías personalizadas no se verán afectadas.",
+                        onConfirm: async () => {
+                            const defaults = {
+                                Ingreso: [...INITIAL_CATEGORIES.Ingreso],
+                                Gasto: [...INITIAL_CATEGORIES.Gasto]
+                            };
+                            setPresetCategories(defaults);
+                            await savePresetCategories(defaults);
+                            showToast("Categorías preestablecidas restauradas.");
+                            setConfirmModal(null);
+                        }
+                    });
+                };
+
+                const handleBudgetChange = async (catName, monthIndex, value) => {
+                    if (!user) return;
+                    const numericValue = parseFloat(value) || 0;
+                    
+                    if (hasValidApiKey && db) {
+                        const currentCatBudget = budgets[catName] || {};
+                        const updatedMonths = { ...currentCatBudget, [monthIndex]: numericValue };
+                        try {
+                            await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'budgets', catName), {
+                                months: updatedMonths,
+                                updatedAt: new Date().toISOString()
+                            }, { merge: true });
+                        } catch (error) {
+                            console.error(error);
+                        }
+                    } else {
+                        const userPrefix = `finanzas_${user.uid}_`;
+                        const current = localStorage.getItem(`${userPrefix}budgets`);
+                        const parsed = current ? JSON.parse(current) : {};
+                        if (!parsed[catName]) parsed[catName] = {};
+                        parsed[catName][monthIndex] = numericValue;
+                        localStorage.setItem(`${userPrefix}budgets`, JSON.stringify(parsed));
+                        
+                        window.dispatchEvent(new Event('localDataChanged'));
+                    }
+                };
+
+                const handleBulkBudgetApply = async () => {
+                    if (!user || !selectedBudgetCategory || !bulkBudgetValueText) {
+                        showToast("Selecciona un concepto e ingresa el monto.", "error");
+                        return;
+                    }
+
+                    const value = cleanCurrencyToNumber(bulkBudgetValueText);
+                    const updatedMonths = { ...(budgets[selectedBudgetCategory] || {}) };
+
+                    if (targetBudgetMonth === 'all') {
+                        for (let i = 0; i < 12; i++) {
+                            updatedMonths[i] = value;
+                        }
+                    } else {
+                        updatedMonths[Number(targetBudgetMonth)] = value;
+                    }
+
+                    if (hasValidApiKey && db) {
+                        try {
+                            await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'budgets', selectedBudgetCategory), {
+                                months: updatedMonths,
+                                updatedAt: new Date().toISOString()
+                            }, { merge: true });
+                            
+                            setBulkBudgetValueText('');
+                            showToast(targetBudgetMonth === 'all'
+                                ? `Presupuesto asignado a todo el año en: ${selectedBudgetCategory}`
+                                : `Presupuesto guardado en ${MONTH_NAMES[Number(targetBudgetMonth)]} para: ${selectedBudgetCategory}`
+                            );
+                        } catch (error) {
+                            console.error(error);
+                            showToast("Error de conexión al guardar el presupuesto", "error");
+                        }
+                    } else {
+                        const userPrefix = `finanzas_${user.uid}_`;
+                        const current = localStorage.getItem(`${userPrefix}budgets`);
+                        const parsed = current ? JSON.parse(current) : {};
+                        parsed[selectedBudgetCategory] = updatedMonths;
+                        localStorage.setItem(`${userPrefix}budgets`, JSON.stringify(parsed));
+                        
+                        setBulkBudgetValueText('');
+                        showToast(`Presupuesto guardado localmente.`);
+                        window.dispatchEvent(new Event('localDataChanged'));
+                    }
+                };
+
+                // ── CORRECCIÓN: evitar stale closure en cashFlowData ──────────
+                // Antes: saveCashFieldToDb leía cashFlowData del closure (valor viejo),
+                // causando que al editar varios campos en rápida sucesión el segundo campo
+                // sobreescribiera el valor del primero con cero.
+                // Solución: usar setState funcional para siempre tener el valor más reciente,
+                // y pasar los datos frescos directamente a la función de guardado.
+                const handleCashFieldInputChange = (field, textValue) => {
+                    const formatted = formatInputOnTheFly(textValue);
+                    const numValue = cleanCurrencyToNumber(textValue);
+                    setCashInputs(prev => ({ ...prev, [field]: formatted }));
+                    // Usamos el updater funcional para obtener el estado más reciente
+                    // y pasamos el objeto completo a la función de guardado
+                    setCashFlowData(prev => {
+                        const updatedData = { ...prev, [field]: numValue };
+                        saveCashDataToDb(updatedData); // datos frescos, sin closure stale
+                        return updatedData;
+                    });
+                };
+
+                const saveCashDataToDb = async (updatedData) => {
+                    if (!user) return;
+                    if (hasValidApiKey && db) {
+                        try {
+                            await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cashFlows', monthlyKey), updatedData, { merge: true });
+                        } catch (err) {
+                            console.error("Error guardando cambios de efectivo:", err);
+                            showToast("Error al guardar datos de efectivo", "error");
+                        }
+                    } else {
+                        const userPrefix = `finanzas_${user.uid}_`;
+                        localStorage.setItem(`${userPrefix}cashFlows_${monthlyKey}`, JSON.stringify(updatedData));
+                        // No dispatching localDataChanged aquí porque ya actualizamos
+                        // el estado directamente con setCashFlowData — evita doble render
+                    }
+                };
+
+                const toggleCategoryExclusion = async (category) => {
+                    if (!user) return;
+                    let newExcluidos = [...cashFlowData.excluidos];
+                    if (newExcluidos.includes(category)) {
+                        newExcluidos = newExcluidos.filter(c => c !== category);
+                    } else {
+                        newExcluidos.push(category);
+                    }
+
+                    const updatedData = { ...cashFlowData, excluidos: newExcluidos };
+                    setCashFlowData(updatedData);
+
+                    if (hasValidApiKey && db) {
+                        try {
+                            await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'cashFlows', monthlyKey), updatedData, { merge: true });
+                        } catch (err) {
+                            console.error("Error guardando exclusión:", err);
+                        }
+                    } else {
+                        const userPrefix = `finanzas_${user.uid}_`;
+                        localStorage.setItem(`${userPrefix}cashFlows_${monthlyKey}`, JSON.stringify(updatedData));
+                        window.dispatchEvent(new Event('localDataChanged'));
+                    }
+                };
+
+                // --- PROCESAMIENTO ANALÍTICO ---
+                const stats = useMemo(() => {
+                    const activeMonths = [];
+                    if (filterMode === 'single') {
+                        activeMonths.push(selectedMonth);
+                    } else if (filterMode === 'range') {
+                        const start = Math.min(rangeStart, rangeEnd);
+                        const end = Math.max(rangeStart, rangeEnd);
+                        for (let m = start; m <= end; m++) {
+                            activeMonths.push(m);
+                        }
+                    } else {
+                        for (let m = 0; m < 12; m++) activeMonths.push(m);
+                    }
+
+                    const filteredTrans = transactions.filter(t => {
+                        const d = new Date(t.date);
+                        return d.getFullYear() === selectedYear && activeMonths.includes(d.getMonth());
+                    });
+
+                    let totalIngresosReal = 0;
+                    let totalGastosReal = 0;
+                    const realPorCategoria = {};
+
+                    filteredTrans.forEach(t => {
+                        if (t.type === 'Ingreso') {
+                            totalIngresosReal += t.amount;
+                        } else {
+                            totalGastosReal += t.amount;
+                        }
+                        realPorCategoria[t.category] = (realPorCategoria[t.category] || 0) + t.amount;
+                    });
+
+                    let totalIngresosPresupuesto = 0;
+                    let totalGastosPresupuesto = 0;
+
+                    mergedCategories.Ingreso.forEach(cat => {
+                        let catBudgetSum = 0;
+                        activeMonths.forEach(m => {
+                            catBudgetSum += budgets[cat]?.[m] || 0;
+                        });
+                        totalIngresosPresupuesto += catBudgetSum;
+                    });
+
+                    mergedCategories.Gasto.forEach(cat => {
+                        let catBudgetSum = 0;
+                        activeMonths.forEach(m => {
+                            catBudgetSum += budgets[cat]?.[m] || 0;
+                        });
+                        totalGastosPresupuesto += catBudgetSum;
+                    });
+
+                    const breakdown = [];
+                    let totalGastosPendientesReservar = 0;
+
+                    mergedCategories.Gasto.forEach(cat => {
+                        const real = realPorCategoria[cat] || 0;
+                        let presupuestado = 0;
+                        activeMonths.forEach(m => {
+                            presupuestado += budgets[cat]?.[m] || 0;
+                        });
+                        
+                        const pendiente = Math.max(0, presupuestado - real);
+                        const excluido = cashFlowData.excluidos.includes(cat);
+
+                        if (!excluido) {
+                            totalGastosPendientesReservar += pendiente;
+                        }
+
+                        const diferencia = presupuestado - real;
+                        const ejecucion = presupuestado > 0 ? (real / presupuestado) * 100 : 0;
+
+                        if (real > 0 || presupuestado > 0) {
+                            breakdown.push({
+                                category: cat,
+                                type: 'Gasto',
+                                real,
+                                presupuestado,
+                                pendiente,
+                                excluido,
+                                diferencia,
+                                ejecucion
+                            });
+                        }
+                    });
+
+                    mergedCategories.Ingreso.forEach(cat => {
+                        const real = realPorCategoria[cat] || 0;
+                        let presupuestado = 0;
+                        activeMonths.forEach(m => {
+                            presupuestado += budgets[cat]?.[m] || 0;
+                        });
+
+                        const diferencia = real - presupuestado;
+                        const ejecucion = presupuestado > 0 ? (real / presupuestado) * 100 : 0;
+
+                        if (real > 0 || presupuestado > 0) {
+                            breakdown.push({
+                                category: cat,
+                                type: 'Ingreso',
+                                real,
+                                presupuestado,
+                                pendiente: 0,
+                                excluido: false,
+                                diferencia,
+                                ejecucion
+                            });
+                        }
+                    });
+
+                    const topIngresos = breakdown
+                        .filter(item => item.type === 'Ingreso' && item.real > 0)
+                        .sort((a, b) => b.real - a.real)
+                        .slice(0, 5);
+
+                    const topGastos = breakdown
+                        .filter(item => item.type === 'Gasto' && item.real > 0)
+                        .sort((a, b) => b.real - a.real)
+                        .slice(0, 5);
+
+                    const saldoReal = totalIngresosReal - totalGastosReal;
+                    const saldoPresupuesto = totalIngresosPresupuesto - totalGastosPresupuesto;
+
+                    const totalEfectivoCaja = cashFlowData.juan + cashFlowData.sindy + cashFlowData.otros;
+                    const disponibleReal = totalEfectivoCaja - totalGastosPendientesReservar - cashFlowData.tarjetaCredito;
+
+                    return {
+                        totalIngresosReal,
+                        totalGastosReal,
+                        totalIngresosPresupuesto,
+                        totalGastosPresupuesto,
+                        saldoReal,
+                        saldoPresupuesto,
+                        breakdown,
+                        filteredTrans,
+                        totalGastosPendientesReservar,
+                        totalEfectivoCaja,
+                        disponibleReal,
+                        topIngresos,
+                        topGastos,
+                        activeMonths
+                    };
+                }, [transactions, customCategories, budgets, selectedMonth, rangeStart, rangeEnd, filterMode, selectedYear, mergedCategories, cashFlowData]);
+
+                // --- RENDERS DE COMPONENTES ---
+
+                if (!user && !authLoading) {
+                    return (
+                        <div className="min-h-screen bg-slate-900 flex flex-col justify-center items-center p-4">
+                            <div className="bg-white p-8 rounded-3xl shadow-2xl max-w-md w-full space-y-6 animate-fade-in text-slate-800">
+                                <div className="text-center space-y-2">
+                                    <div className="inline-flex p-3 bg-teal-50 text-teal-600 rounded-full">
+                                        <AppIcon name="dollar-sign" size={32} />
+                                    </div>
+                                    <h1 className="text-2xl font-black text-slate-800">Finanzas Pro</h1>
+                                    <p className="text-xs text-slate-400">
+                                        {isRegistering ? "Crea una cuenta para guardar tus finanzas de forma segura" : "Inicia sesión para gestionar tus presupuestos familiares"}
+                                    </p>
+                                </div>
+
+                                {/* Banner modo: Firebase conectado o demo */}
+                                {hasValidApiKey ? (
+                                    <div className="bg-teal-50 border border-teal-200 rounded-xl p-3 text-teal-800 text-xs flex gap-2">
+                                        <AppIcon name="cloud" className="text-teal-600 shrink-0 mt-0.5" size={16} />
+                                        <span><strong>Firebase conectado:</strong> Tus datos se sincronizan en la nube con el proyecto <strong>{rawFirebaseConfig?.projectId}</strong>.</span>
+                                    </div>
+                                ) : (
+                                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-800 text-xs flex gap-2">
+                                        <AppIcon name="wifi-off" className="text-amber-600 shrink-0 mt-0.5" size={16} />
+                                        <span>
+                                            <strong>Modo Demostración Local:</strong> Sin Firebase configurado. Los datos se guardan solo en este navegador.{' '}
+                                            <button onClick={() => setShowFirebasePanel(p => !p)} className="underline font-bold text-amber-900">Conectar Firebase →</button>
+                                        </span>
+                                    </div>
+                                )}
+
+                                {/* ── Panel de configuración de Firebase ─────────────────── */}
+                                {showFirebasePanel && (
+                                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 animate-fade-in">
+                                        <div className="flex justify-between items-center">
+                                            <h3 className="text-sm font-black text-slate-700 flex items-center gap-1.5">
+                                                <AppIcon name="database" size={16} className="text-teal-600" /> Configurar Firebase
+                                            </h3>
+                                            <button onClick={() => setShowFirebasePanel(false)} className="text-slate-400 hover:text-slate-600 text-xs">✕ Cerrar</button>
+                                        </div>
+                                        <p className="text-xs text-slate-500 leading-relaxed">
+                                            Pega los datos de tu proyecto de Firebase. Los encontrarás en <strong>Consola Firebase → tu proyecto → Configuración (⚙️) → Tus apps → Config SDK</strong>.
+                                        </p>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {[
+                                                { key: 'apiKey', label: 'API Key', placeholder: 'AIzaSy...' },
+                                                { key: 'authDomain', label: 'Auth Domain', placeholder: 'tu-proyecto.firebaseapp.com' },
+                                                { key: 'projectId', label: 'Project ID', placeholder: 'tu-proyecto-id' },
+                                                { key: 'storageBucket', label: 'Storage Bucket', placeholder: 'tu-proyecto.appspot.com' },
+                                                { key: 'messagingSenderId', label: 'Messaging Sender ID', placeholder: '123456789' },
+                                                { key: 'appId', label: 'App ID', placeholder: '1:123...' }
+                                            ].map(field => (
+                                                <div key={field.key} className="flex flex-col gap-0.5">
+                                                    <label className="text-[10px] font-bold text-slate-500 uppercase">{field.label} {['apiKey','authDomain','projectId'].includes(field.key) && <span className="text-rose-500">*</span>}</label>
+                                                    <input
+                                                        type="text"
+                                                        value={fbConfigInputs[field.key]}
+                                                        onChange={e => setFbConfigInputs(prev => ({ ...prev, [field.key]: e.target.value }))}
+                                                        placeholder={field.placeholder}
+                                                        className="p-2 text-xs border border-slate-200 rounded-lg bg-white outline-none focus:ring-2 focus:ring-teal-500 font-mono text-slate-700"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {fbSaveStatus === 'error' && <p className="text-xs text-rose-600 font-bold">⚠ Completa los campos obligatorios: API Key, Auth Domain y Project ID.</p>}
+                                        {fbSaveStatus === 'saved' && <p className="text-xs text-teal-600 font-bold">✓ Configuración guardada. Recargando...</p>}
+                                        {fbSaveStatus === 'cleared' && <p className="text-xs text-amber-600 font-bold">Configuración eliminada. Recargando...</p>}
+
+                                        <div className="flex gap-2 pt-1">
+                                            <button onClick={handleSaveFirebaseConfig} className="flex-1 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs transition-all">
+                                                Guardar y Conectar
+                                            </button>
+                                            {localStorage.getItem('firebase_config_saved') && (
+                                                <button onClick={handleClearFirebaseConfig} className="px-3 py-2 bg-slate-200 hover:bg-rose-100 text-slate-600 hover:text-rose-700 font-bold rounded-xl text-xs transition-all">
+                                                    Borrar config
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                                {/* ── Fin panel Firebase ─────────────────────────────────── */}
+
+                                <form onSubmit={handleAuthSubmit} className="space-y-4">
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-slate-500 uppercase">Correo electrónico</label>
+                                        <div className="relative">
+                                            <span className="absolute left-3 top-3 text-slate-400"><AppIcon name="mail" size={18} /></span>
+                                            <input 
+                                                type="email"
+                                                value={email}
+                                                onChange={(e) => setEmail(e.target.value)}
+                                                placeholder="ejemplo@correo.com"
+                                                className="w-full p-2.5 pl-10 border border-slate-200 rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-teal-500 text-slate-850 font-medium text-sm"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-slate-500 uppercase">Contraseña</label>
+                                        <div className="relative">
+                                            <span className="absolute left-3 top-3 text-slate-400"><AppIcon name="lock" size={18} /></span>
+                                            <input 
+                                                type="password"
+                                                value={password}
+                                                onChange={(e) => setPassword(e.target.value)}
+                                                placeholder="••••••••"
+                                                className="w-full p-2.5 pl-10 border border-slate-200 rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-teal-500 text-slate-850 font-medium text-sm"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <button 
+                                        type="submit"
+                                        className="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-teal-100"
+                                    >
+                                        {isRegistering ? "Crear Cuenta" : "Iniciar Sesión"}
+                                    </button>
+                                </form>
+
+                                <div className="text-center pt-2">
+                                    <button 
+                                        onClick={() => setIsRegistering(!isRegistering)}
+                                        className="text-xs text-teal-600 hover:underline font-bold"
+                                    >
+                                        {isRegistering ? "¿Ya tienes una cuenta? Inicia sesión aquí" : "¿No tienes cuenta? Regístrate gratis aquí"}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+
+                if (authLoading) {
+                    return (
+                        <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center">
+                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-600 mb-4"></div>
+                            <p className="text-slate-500 text-sm font-medium">Validando sesión con la nube...</p>
+                        </div>
+                    );
+                }
+
+                return (
+                    <div className="min-h-screen bg-slate-50 font-sans pb-24 md:pb-0 md:pl-64 text-slate-900">
+                        
+                        {/* HUD de Alerta Toast */}
+                        {toast && (
+                            <div className={`fixed top-4 right-4 z-50 p-4 rounded-xl shadow-lg border text-white flex items-center gap-3 transition-all transform animate-bounce ${toast.type === 'error' ? 'bg-rose-600 border-rose-500' : 'bg-emerald-600 border-emerald-500'}`}>
+                                <AppIcon name="info" size={18} />
+                                <span className="text-sm font-semibold">{toast.message}</span>
+                            </div>
+                        )}
+
+                        {/* Modal de Confirmación */}
+                        {confirmModal && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                                <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-slate-100 animate-fade-in text-slate-800">
+                                    <h3 className="text-lg font-bold text-slate-800 mb-2">{confirmModal.title}</h3>
+                                    <p className="text-sm text-slate-500 mb-6">{confirmModal.message}</p>
+                                    <div className="flex gap-3 justify-end">
+                                        <button onClick={() => setConfirmModal(null)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
+                                        <button onClick={confirmModal.onConfirm} className="px-4 py-2 text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-sm">Confirmar</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Menú de Navegación Lateral (PC) */}
+                        <aside className="hidden md:flex flex-col w-64 bg-slate-900 text-slate-300 fixed h-full left-0 top-0 border-r border-slate-800 z-30">
+                            <div className="p-6">
+                                <h1 className="text-xl font-bold text-white flex items-center gap-2">
+                                    <AppIcon name="dollar-sign" className="text-teal-400" />
+                                    Finanzas Pro
+                                </h1>
+                                <p className="text-[10px] text-slate-400 mt-1 truncate">{user?.email}</p>
+                                {!hasValidApiKey && (
+                                    <span className="text-[8px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded-full font-bold mt-1 inline-block uppercase tracking-wider">Modo Local</span>
+                                )}
+                            </div>
+                            
+                            <nav className="flex-1 px-4 space-y-1.5">
+                                <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-teal-500/10 text-teal-400 font-bold border-l-4 border-teal-500 pl-3' : 'hover:bg-slate-800/50 hover:text-white'}`}>
+                                    <AppIcon name="pie-chart" size={18} /> Resumen Ejecutivo
+                                </button>
+                                <button onClick={() => setActiveTab('add')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'add' ? 'bg-teal-500/10 text-teal-400 font-bold border-l-4 border-teal-500 pl-3' : 'hover:bg-slate-800/50 hover:text-white'}`}>
+                                    <AppIcon name="plus-circle" size={18} /> Registrar Flujo
+                                </button>
+                                <button onClick={() => setActiveTab('history')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'history' ? 'bg-teal-500/10 text-teal-400 font-bold border-l-4 border-teal-500 pl-3' : 'hover:bg-slate-800/50 hover:text-white'}`}>
+                                    <AppIcon name="list" size={18} /> Historial Diario
+                                </button>
+                                <button onClick={() => setActiveTab('budget')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'budget' ? 'bg-teal-500/10 text-teal-400 font-bold border-l-4 border-teal-500 pl-3' : 'hover:bg-slate-800/50 hover:text-white'}`}>
+                                    <AppIcon name="calendar" size={18} /> Presupuesto Anual
+                                </button>
+                                <button onClick={() => setActiveTab('cash')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'cash' ? 'bg-teal-500/10 text-teal-400 font-bold border-l-4 border-teal-500 pl-3' : 'hover:bg-slate-800/50 hover:text-white'}`}>
+                                    <AppIcon name="wallet" size={18} /> Control de Efectivo
+                                </button>
+                                <button onClick={() => setActiveTab('categories')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'categories' ? 'bg-teal-500/10 text-teal-400 font-bold border-l-4 border-teal-500 pl-3' : 'hover:bg-slate-800/50 hover:text-white'}`}>
+                                    <AppIcon name="folder-plus" size={18} /> Categorías
+                                </button>
+                            </nav>
+
+                            <div className="p-4 border-t border-slate-800 space-y-2">
+                                <button onClick={handleLogout} className="w-full flex items-center gap-2 text-xs text-rose-400 hover:text-rose-300 py-2 font-bold bg-slate-800/30 hover:bg-slate-800 rounded-lg justify-center transition-all">
+                                    <AppIcon name="log-out" size={14} /> Cerrar Sesión
+                                </button>
+                            </div>
+                        </aside>
+
+                        {/* Cabecera de Página (Móvil) */}
+                        <header className="md:hidden bg-slate-900 text-white p-4 sticky top-0 z-40 flex justify-between items-center shadow-md">
+                            <div>
+                                <h1 className="text-base font-bold flex items-center gap-1.5">
+                                    <AppIcon name="dollar-sign" className="text-teal-400" size={18} />
+                                    Finanzas Pro
+                                </h1>
+                                <p className="text-[9px] text-slate-400 truncate max-w-[140px]">{user?.email}</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {loading && <span className="text-xs text-teal-400 animate-pulse">Sincronizando...</span>}
+                                <button onClick={handleLogout} className="p-1.5 bg-slate-800 rounded-lg text-rose-400" title="Cerrar sesión">
+                                    <AppIcon name="log-out" size={16} />
+                                </button>
+                            </div>
+                        </header>
+
+                        {/* Contenedor Central Principal */}
+                        <main className="p-4 md:p-8 max-w-6xl mx-auto space-y-6">
+
+                            {/* Selector de Período Global */}
+                            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4 animate-fade-in">
+                                <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4">
+                                    <div className="flex items-center gap-2">
+                                        <div className="p-2.5 bg-slate-100 text-slate-700 rounded-xl">
+                                            <AppIcon name="filter" size={20} />
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Período de Análisis</p>
+                                            <h2 className="text-base font-extrabold text-slate-800">
+                                                {filterMode === 'single' && `${MONTH_NAMES[selectedMonth]} ${selectedYear}`}
+                                                {filterMode === 'range' && `${MONTH_NAMES[rangeStart]} a ${MONTH_NAMES[rangeEnd]} - ${selectedYear}`}
+                                                {filterMode === 'year' && `Año Completo ${selectedYear}`}
+                                            </h2>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex p-1 bg-slate-100 rounded-xl text-xs font-bold self-start">
+                                        <button onClick={() => setFilterMode('single')} className={`px-3 py-1.5 rounded-lg transition-all ${filterMode === 'single' ? 'bg-white text-teal-600 shadow' : 'text-slate-500'}`}>Un Mes</button>
+                                        <button onClick={() => setFilterMode('range')} className={`px-3 py-1.5 rounded-lg transition-all ${filterMode === 'range' ? 'bg-white text-teal-600 shadow' : 'text-slate-500'}`}>Rango</button>
+                                        <button onClick={() => setFilterMode('year')} className={`px-3 py-1.5 rounded-lg transition-all ${filterMode === 'year' ? 'bg-white text-teal-600 shadow' : 'text-slate-500'}`}>Año Completo</button>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-slate-50 text-slate-800">
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase mb-1">Año de Consulta</span>
+                                        <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="p-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 font-bold text-slate-700 outline-none focus:ring-2 focus:ring-teal-500">
+                                            {[2025, 2026, 2027, 2028].map(y => <option key={y} value={y}>{y}</option>)}
+                                        </select>
+                                    </div>
+
+                                    {filterMode === 'single' && (
+                                        <div className="flex flex-col md:col-span-2">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase mb-1">Seleccionar Mes</span>
+                                            <select value={selectedMonth} onChange={(e) => setSelectedMonth(Number(e.target.value))} className="p-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 font-bold text-slate-700 outline-none focus:ring-2 focus:ring-teal-500">
+                                                {MONTH_NAMES.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                                            </select>
+                                        </div>
+                                    )}
+
+                                    {filterMode === 'range' && (
+                                        <>
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase mb-1">Mes Inicial</span>
+                                                <select value={rangeStart} onChange={(e) => setRangeStart(Number(e.target.value))} className="p-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 font-bold text-slate-700 outline-none focus:ring-2 focus:ring-teal-500">
+                                                    {MONTH_NAMES.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase mb-1">Mes Final</span>
+                                                <select value={rangeEnd} onChange={(e) => setRangeEnd(Number(e.target.value))} className="p-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 font-bold text-slate-700 outline-none focus:ring-2 focus:ring-teal-500">
+                                                    {MONTH_NAMES.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                                                </select>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {filterMode === 'year' && (
+                                        <div className="flex items-center justify-center md:col-span-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                                            <p className="text-xs text-slate-400 font-bold text-center">Consolidando información de todo el año.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* TAB: DASHBOARD */}
+                            {activeTab === 'dashboard' && (
+                                <div className="space-y-6 animate-fade-in">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between">
+                                            <div className="flex justify-between items-center mb-4">
+                                                <span className="text-xs text-slate-500 font-bold uppercase tracking-wider">Ingresos Consolidados</span>
+                                                <span className="p-2 bg-emerald-50 text-emerald-600 rounded-xl"><AppIcon name="trending-up" /></span>
+                                            </div>
+                                            <div>
+                                                <p className="text-2xl font-black text-slate-800">{formatCOP(stats.totalIngresosReal)}</p>
+                                                <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-100 text-xs">
+                                                    <span className="text-slate-500">Presupuestado:</span>
+                                                    <span className="font-semibold text-slate-700">{formatCOP(stats.totalIngresosPresupuesto)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between">
+                                            <div className="flex justify-between items-center mb-4">
+                                                <span className="text-xs text-slate-500 font-bold uppercase tracking-wider">Gastos Consolidados</span>
+                                                <span className="p-2 bg-rose-50 text-rose-600 rounded-xl"><AppIcon name="trending-down" /></span>
+                                            </div>
+                                            <div>
+                                                <p className="text-2xl font-black text-slate-800">{formatCOP(stats.totalGastosReal)}</p>
+                                                <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-100 text-xs">
+                                                    <span className="text-slate-500">Presupuestado:</span>
+                                                    <span className="font-semibold text-slate-700">{formatCOP(stats.totalGastosPresupuesto)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col justify-between">
+                                            <div className="flex justify-between items-center mb-4">
+                                                <span className="text-xs text-slate-500 font-bold uppercase tracking-wider">Flujo Neto Real</span>
+                                                <span className={`p-2 rounded-xl ${stats.saldoReal >= 0 ? 'bg-teal-50 text-teal-600' : 'bg-rose-50 text-rose-600'}`}><AppIcon name="dollar-sign" /></span>
+                                            </div>
+                                            <div>
+                                                <p className={`text-2xl font-black ${stats.saldoReal >= 0 ? 'text-teal-600' : 'text-rose-600'}`}>{formatCOP(stats.saldoReal)}</p>
+                                                <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-100 text-xs">
+                                                    <span className="text-slate-500">Esperado Presupuesto:</span>
+                                                    <span className="font-semibold text-slate-700">{formatCOP(stats.saldoPresupuesto)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Estado efectivo */}
+                                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-3 bg-teal-50 text-teal-600 rounded-full">
+                                                <AppIcon name="wallet" />
+                                            </div>
+                                            <div>
+                                                <h4 className="font-bold text-slate-800 text-sm">Disponible Real de Caja</h4>
+                                                <p className="text-xs text-slate-400 font-medium">Suma de saldos menos deudas y gastos del mes ({MONTH_NAMES[selectedMonth]})</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className="text-xs text-slate-400 block font-bold">Líquido disponible:</span>
+                                            <span className={`text-2xl font-black ${stats.disponibleReal >= 0 ? 'text-teal-600' : 'text-rose-600'}`}>{formatCOP(stats.disponibleReal)}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Tops */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-slate-800">
+                                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+                                            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Top 5 Ingresos
+                                            </h3>
+                                            {stats.topIngresos.length === 0 ? <p className="text-xs text-slate-400 italic py-4 text-center">No hay registros de ingresos.</p> : (
+                                                <div className="space-y-3">
+                                                    {stats.topIngresos.map((item, idx) => (
+                                                        <div key={idx} className="flex justify-between items-center p-3 rounded-xl bg-emerald-50/30 border border-emerald-100/30">
+                                                            <span className="text-sm font-bold text-slate-700">{item.category}</span>
+                                                            <span className="text-sm font-black text-emerald-700">{formatCOP(item.real)}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+                                            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                                                <span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Top 5 Gastos
+                                            </h3>
+                                            {stats.topGastos.length === 0 ? <p className="text-xs text-slate-400 italic py-4 text-center">No hay registros de egresos.</p> : (
+                                                <div className="space-y-3">
+                                                    {stats.topGastos.map((item, idx) => (
+                                                        <div key={idx} className="flex justify-between items-center p-3 rounded-xl bg-rose-50/30 border border-rose-100/30">
+                                                            <span className="text-sm font-bold text-slate-700">{item.category}</span>
+                                                            <span className="text-sm font-black text-rose-700">{formatCOP(item.real)}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Tabla Desglose */}
+                                    <div className="bg-white rounded-2xl p-6 border border-slate-100 text-slate-800">
+                                        <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center gap-2"><AppIcon name="percent" className="text-teal-500" /> Ejecución Presupuestal por Concepto</h3>
+                                        {stats.breakdown.length === 0 ? <div className="text-center py-8 text-slate-400 text-xs">Sin transacciones registradas.</div> : (
+                                            <div className="space-y-4">
+                                                {stats.breakdown.map((item, index) => {
+                                                    const isIncome = item.type === 'Ingreso';
+                                                    const isOverspent = !isIncome && item.real > item.presupuestado;
+                                                    return (
+                                                        <div key={index} className="p-4 rounded-xl bg-slate-50/50 border border-slate-100 space-y-2">
+                                                            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className={`w-2.5 h-2.5 rounded-full ${isIncome ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                                                                    <span className="font-bold text-slate-700 text-sm">{item.category}</span>
+                                                                    <span className="text-[9px] text-slate-400 font-bold bg-slate-200 px-2 py-0.5 rounded">{item.type}</span>
+                                                                </div>
+                                                                <div className="text-xs text-slate-500 font-medium">
+                                                                    Real: <strong className="text-slate-800">{formatCOP(item.real)}</strong> | Presupuesto: <strong className="text-slate-800">{formatCOP(item.presupuestado)}</strong>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-4">
+                                                                <div className="flex-1 bg-slate-200 h-2 rounded-full overflow-hidden relative">
+                                                                    <div className={`h-full rounded-full transition-all ${isIncome ? 'bg-emerald-500' : isOverspent ? 'bg-rose-500' : 'bg-teal-500'}`} style={{ width: `${Math.min(item.ejecucion, 100)}%` }} />
+                                                                </div>
+                                                                <div className="w-12 text-right text-xs font-bold text-slate-600">{item.ejecucion.toFixed(0)}%</div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* TAB: REGISTRAR FLUJO */}
+                            {activeTab === 'add' && (
+                                <div className="max-w-lg mx-auto bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100 animate-fade-in space-y-6 text-slate-800">
+                                    <div className="text-center">
+                                        <h2 className="text-2xl font-black text-slate-800">Registrar Movimiento</h2>
+                                        <p className="text-xs text-slate-400 mt-1">Crea registros contables para actualizar tus saldos</p>
+                                    </div>
+
+                                    <form onSubmit={handleTransactionSubmit} className="space-y-5">
+                                        <div className="flex p-1 bg-slate-100 rounded-xl">
+                                            <button type="button" onClick={() => handleInputChange({ target: { name: 'type', value: 'Gasto' } })} className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all ${formData.type === 'Gasto' ? 'bg-white text-rose-600 shadow' : 'text-slate-500'}`}>Egreso / Gasto</button>
+                                            <button type="button" onClick={() => handleInputChange({ target: { name: 'type', value: 'Ingreso' } })} className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all ${formData.type === 'Ingreso' ? 'bg-white text-teal-600 shadow' : 'text-slate-500'}`}>Ingreso</button>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Fecha de Transacción</label>
+                                            <input type="date" name="date" value={formData.date} onChange={handleInputChange} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-teal-500 text-slate-700 font-medium" required />
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Categoría</label>
+                                            <select name="category" value={formData.category} onChange={handleInputChange} className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-teal-500 text-slate-700 font-semibold">
+                                                {mergedCategories[formData.type].map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                            </select>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Monto (COP)</label>
+                                            <input type="text" name="amountText" value={formData.amountText} onChange={handleInputChange} placeholder="$ 0" className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-teal-500 text-lg font-bold text-slate-800" required />
+                                            <span className="text-[10px] text-slate-400 mt-1 block font-medium">La máscara de separador de miles se aplica automáticamente.</span>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Descripción / Soporte</label>
+                                            <input type="text" name="description" value={formData.description} onChange={handleInputChange} placeholder="Ej. Mercado, Factura celular..." className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-teal-500 text-slate-750 font-medium" />
+                                        </div>
+
+                                        <button type="submit" className="w-full py-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-lg shadow-teal-100 transition-all active:scale-[0.98]">Guardar Registro</button>
+                                    </form>
+                                </div>
+                            )}
+
+                            {/* TAB: HISTORIAL */}
+                            {activeTab === 'history' && (
+                                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden animate-fade-in p-6 space-y-4 text-slate-800">
+                                    <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pb-4 border-b border-slate-100">
+                                        <div>
+                                            <h2 className="text-xl font-bold text-slate-800">Libro Diario de Transacciones</h2>
+                                            <p className="text-xs text-slate-400">Todos tus movimientos contables consolidados en el período</p>
+                                        </div>
+                                        <span className="text-xs px-3 py-1 bg-teal-50 rounded-full text-teal-600 font-bold">{stats.filteredTrans.length} movimientos</span>
+                                    </div>
+
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-100">
+                                                    <th className="p-4 font-bold">Fecha</th>
+                                                    <th className="p-4 font-bold">Concepto</th>
+                                                    <th className="p-4 font-bold">Descripción</th>
+                                                    <th className="p-4 font-bold text-right">Monto</th>
+                                                    <th className="p-4 font-bold text-center">Acción</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {stats.filteredTrans.length === 0 ? (
+                                                    <tr><td colSpan="5" className="p-12 text-center text-slate-400 text-xs font-semibold">Sin transacciones registradas en este período.</td></tr>
+                                                ) : (
+                                                    stats.filteredTrans.map(t => (
+                                                        <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
+                                                            <td className="p-4 text-sm text-slate-500 whitespace-nowrap">{t.date}</td>
+                                                            <td className="p-4">
+                                                                <span className="text-sm font-bold text-slate-800 block">{t.category}</span>
+                                                                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${t.type === 'Ingreso' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>{t.type}</span>
+                                                            </td>
+                                                            <td className="p-4 text-sm text-slate-500 max-w-xs truncate">{t.description || <em className="text-slate-300">Sin descripción</em>}</td>
+                                                            <td className={`p-4 text-right text-sm font-black whitespace-nowrap ${t.type === 'Ingreso' ? 'text-emerald-600' : 'text-rose-600'}`}>{t.type === 'Ingreso' ? '+' : '-'}{formatCOP(t.amount)}</td>
+                                                            <td className="p-4 text-center">
+                                                                <button onClick={() => triggerDeleteTransaction(t.id)} className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-all inline-flex items-center"><AppIcon name="trash-2" size={16} /></button>
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* TAB: PRESUPUESTO ANUAL */}
+                            {activeTab === 'budget' && (
+                                <div className="space-y-6 animate-fade-in text-slate-850">
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 text-slate-800">
+                                        <h3 className="text-base font-bold text-slate-800 mb-2 flex items-center gap-2"><AppIcon name="trending-up" className="text-teal-600" /> Asignador de Presupuestos (Anual o Mes Específico)</h3>
+                                        <p className="text-xs text-slate-400 mb-4 font-medium">Asigna y distribuye valores presupuestados de forma rápida.</p>
+                                        
+                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                                            <div className="w-full">
+                                                <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Categoría Objetivo</label>
+                                                <select value={selectedBudgetCategory} onChange={(e) => setSelectedBudgetCategory(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 font-semibold outline-none focus:ring-2 focus:ring-teal-500 text-slate-700">
+                                                    <option value="">Selecciona categoría...</option>
+                                                    <optgroup label="Ingresos">
+                                                        {mergedCategories.Ingreso.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                                    </optgroup>
+                                                    <optgroup label="Gastos">
+                                                        {mergedCategories.Gasto.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                                    </optgroup>
+                                                </select>
+                                            </div>
+
+                                            <div className="w-full">
+                                                <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Período Destino</label>
+                                                <select value={targetBudgetMonth} onChange={(e) => setTargetBudgetMonth(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 font-semibold outline-none focus:ring-2 focus:ring-teal-500 text-slate-700">
+                                                    <option value="all">Todo el año (12 meses)</option>
+                                                    {MONTH_NAMES.map((m, idx) => <option key={idx} value={idx.toString()}>{m}</option>)}
+                                                </select>
+                                            </div>
+
+                                            <div className="w-full">
+                                                <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Monto Mensual (COP)</label>
+                                                <input type="text" value={bulkBudgetValueText} onChange={(e) => setBulkBudgetValueText(formatInputOnTheFly(e.target.value))} placeholder="$ 0" className="w-full p-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 font-bold outline-none focus:ring-2 focus:ring-teal-500 text-slate-800" />
+                                            </div>
+
+                                            <button onClick={handleBulkBudgetApply} className="w-full px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-1 shadow-md h-[42px]"><AppIcon name="copy" size={16} /> Aplicar</button>
+                                        </div>
+                                    </div>
+
+                                    {/* Matriz interactiva */}
+                                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden text-slate-800">
+                                        <div className="p-6 border-b border-slate-100">
+                                            <h2 className="text-lg font-bold text-slate-800">Matriz de Planeación Financiera</h2>
+                                            <p className="text-xs text-slate-400 mt-1 font-medium">Escribe los valores directamente para realizar ajustes individuales mes a mes.</p>
+                                        </div>
+
+                                        <div className="overflow-x-auto animate-fade-in">
+                                            <table className="w-full text-left border-collapse table-fixed">
+                                                <thead>
+                                                    <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-100">
+                                                        <th className="p-4 font-bold w-48 sticky left-0 bg-slate-50 z-10 border-r border-slate-100">Categoría</th>
+                                                        {MONTH_NAMES.map((m, i) => <th key={i} className="p-4 font-bold text-center w-36">{m.slice(0,3)}</th>)}
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 text-slate-700">
+                                                    <tr className="bg-slate-100/50"><td colSpan="13" className="p-2.5 px-4 font-bold text-xs text-slate-500 uppercase sticky left-0">↑ Ingresos Planificados</td></tr>
+                                                    {mergedCategories.Ingreso.map(cat => (
+                                                        <tr key={cat} className="hover:bg-slate-50/40">
+                                                            <td className="p-3 font-semibold text-sm bg-white sticky left-0 z-10 border-r border-slate-100 truncate shadow-sm">{cat}</td>
+                                                            {Array.from({ length: 12 }).map((_, mIdx) => (
+                                                                <td key={mIdx} className="p-2 text-center">
+                                                                    <input type="number" value={budgets[cat]?.[mIdx] || ''} onChange={(e) => handleBudgetChange(cat, mIdx, e.target.value)} placeholder="0" className="w-full p-1.5 border border-slate-200 rounded-lg text-center text-xs font-semibold bg-emerald-50/20 text-emerald-850 focus:bg-white outline-none focus:ring-2 focus:ring-teal-500" />
+                                                                </td>
+                                                            ))}
+                                                        </tr>
+                                                    ))}
+
+                                                    <tr className="bg-slate-100/50"><td colSpan="13" className="p-2.5 px-4 font-bold text-xs text-slate-500 uppercase sticky left-0">↓ Gastos Planificados</td></tr>
+                                                    {mergedCategories.Gasto.map(cat => (
+                                                        <tr key={cat} className="hover:bg-slate-50/40">
+                                                            <td className="p-3 font-semibold text-sm bg-white sticky left-0 z-10 border-r border-slate-100 truncate shadow-sm">{cat}</td>
+                                                            {Array.from({ length: 12 }).map((_, mIdx) => (
+                                                                <td key={mIdx} className="p-2 text-center">
+                                                                    <input type="number" value={budgets[cat]?.[mIdx] || ''} onChange={(e) => handleBudgetChange(cat, mIdx, e.target.value)} placeholder="0" className="w-full p-1.5 border border-slate-200 rounded-lg text-center text-xs font-semibold bg-rose-50/10 text-rose-850 focus:bg-white outline-none focus:ring-2 focus:ring-rose-500" />
+                                                                </td>
+                                                            ))}
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* TAB: CONTROL DE EFECTIVO */}
+                            {activeTab === 'cash' && (
+                                <div className="space-y-6 animate-fade-in text-slate-800">
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-start gap-4">
+                                        <div className="p-3 bg-teal-50 text-teal-600 rounded-xl hidden sm:block"><AppIcon name="sparkles" /></div>
+                                        <div>
+                                            <h2 className="text-lg font-black text-slate-800">Monitoreo de Liquidez Proyectada</h2>
+                                            <p className="text-xs text-slate-500 mt-1 leading-relaxed">Controla el dinero en cuentas bancarias o efectivo físico. El sistema calculará y proyectará tus saldos descontando tus egresos presupuestados pendientes del mes ({MONTH_NAMES[selectedMonth]}).</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-2">
+                                            <label className="block text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5"><AppIcon name="landmark" size={13} /> Disponible Bancos</label>
+                                            <input type="text" value={cashInputs.juan} onChange={(e) => handleCashFieldInputChange('juan', e.target.value)} placeholder="$ 0" className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-base font-bold text-slate-800" />
+                                        </div>
+                                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-2">
+                                            <label className="block text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5"><AppIcon name="banknote" size={13} /> Disponible Efectivo</label>
+                                            <input type="text" value={cashInputs.sindy} onChange={(e) => handleCashFieldInputChange('sindy', e.target.value)} placeholder="$ 0" className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-base font-bold text-slate-800" />
+                                        </div>
+                                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-2">
+                                            <label className="block text-xs font-bold text-slate-500 uppercase">Otros Disponibles</label>
+                                            <input type="text" value={cashInputs.otros} onChange={(e) => handleCashFieldInputChange('otros', e.target.value)} placeholder="$ 0" className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50 text-base font-bold text-slate-800" />
+                                        </div>
+                                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-rose-100 bg-rose-50/10 space-y-2">
+                                            <label className="block text-xs font-bold text-rose-600 uppercase flex items-center gap-1.5"><AppIcon name="credit-card" size={14} /> Deuda Tarjetas</label>
+                                            <input type="text" value={cashInputs.tarjetaCredito} onChange={(e) => handleCashFieldInputChange('tarjetaCredito', e.target.value)} placeholder="$ 0" className="w-full p-2.5 border border-rose-200 rounded-xl bg-rose-50/50 text-base font-bold text-rose-800" />
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-slate-900 rounded-2xl p-6 text-white grid grid-cols-1 md:grid-cols-4 gap-6 shadow-xl">
+                                        <div>
+                                            <p className="text-xs text-slate-400 uppercase font-extrabold tracking-wider">A. Total Efectivo</p>
+                                            <p className="text-xl font-black text-slate-100">{formatCOP(stats.totalEfectivoCaja)}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-slate-400 uppercase font-extrabold text-amber-400 tracking-wider">B. Gastos Proyectados</p>
+                                            <p className="text-xl font-black text-amber-400">-{formatCOP(stats.totalGastosPendientesReservar)}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-slate-400 uppercase font-extrabold text-rose-400 tracking-wider">C. Deudas Ingresadas</p>
+                                            <p className="text-xl font-black text-rose-400">-{formatCOP(cashFlowData.tarjetaCredito)}</p>
+                                        </div>
+                                        <div className="bg-slate-800 p-3 rounded-xl">
+                                            <p className="text-xs text-teal-400 uppercase font-extrabold tracking-wider">Disponible Real (A-B-C)</p>
+                                            <p className={`text-2xl font-black ${stats.disponibleReal >= 0 ? 'text-teal-400' : 'text-rose-400'}`}>{formatCOP(stats.disponibleReal)}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Exclusión de Gastos */}
+                                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 text-slate-800">
+                                        <h3 className="text-base font-bold text-slate-800 mb-2 flex items-center gap-1.5"><AppIcon name="check-square" /> Exclusión de Gastos Mensuales</h3>
+                                        <p className="text-xs text-slate-400 mb-4 font-medium">Marca los gastos presupuestados que **no pagarás este mes**. Se excluirán del cálculo de liquidez.</p>
+                                        <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto pr-2">
+                                            {stats.breakdown.filter(item => item.type === 'Gasto').map((item, idx) => (
+                                                <div key={idx} className={`py-3 flex justify-between items-center transition-colors ${item.excluido ? 'opacity-50' : ''}`}>
+                                                    <div className="flex items-center gap-3">
+                                                        <button onClick={() => toggleCategoryExclusion(item.category)} className="text-slate-400 hover:text-teal-600">
+                                                            {item.excluido ? <AppIcon name="square" className="text-rose-400" /> : <AppIcon name="check-square" className="text-teal-600" />}
+                                                        </button>
+                                                        <span className="text-sm font-bold text-slate-700">{item.category}</span>
+                                                    </div>
+                                                    <span className="text-xs font-bold text-slate-500">Pendiente: {formatCOP(item.pendiente)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* TAB: CATEGORÍAS */}
+                            {activeTab === 'categories' && (
+                                <div className="space-y-6 animate-fade-in text-slate-800">
+
+                                    {/* ── Crear nueva categoría (form compacto) ── */}
+                                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                                        <h3 className="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+                                            <AppIcon name="folder-plus" className="text-teal-600" size={18} /> Crear Nueva Categoría
+                                        </h3>
+                                        <form onSubmit={handleAddCategory} className="flex flex-col sm:flex-row gap-3">
+                                            <div className="flex p-1 bg-slate-100 rounded-xl shrink-0">
+                                                <button type="button" onClick={() => setNewCatType('Gasto')}
+                                                    className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${newCatType === 'Gasto' ? 'bg-white text-rose-600 shadow' : 'text-slate-500'}`}>
+                                                    Gasto
+                                                </button>
+                                                <button type="button" onClick={() => setNewCatType('Ingreso')}
+                                                    className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${newCatType === 'Ingreso' ? 'bg-white text-teal-600 shadow' : 'text-slate-500'}`}>
+                                                    Ingreso
+                                                </button>
+                                            </div>
+                                            <input
+                                                type="text" value={newCatName}
+                                                onChange={(e) => setNewCatName(e.target.value)}
+                                                placeholder="Nombre de la nueva categoría..."
+                                                className="flex-1 p-2.5 border border-slate-200 rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-teal-500 font-semibold text-slate-800 text-sm"
+                                                required
+                                            />
+                                            <button type="submit"
+                                                className="px-5 py-2.5 bg-slate-900 text-white font-bold rounded-xl text-sm hover:bg-slate-800 transition-all shrink-0">
+                                                + Crear
+                                            </button>
+                                        </form>
+                                    </div>
+
+                                    {/* ── Panel unificado de todas las categorías ── */}
+                                    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+
+                                        {/* Cabecera con filtro Gastos / Ingresos */}
+                                        <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                            <div>
+                                                <h3 className="text-base font-bold text-slate-800">Todas las Categorías</h3>
+                                                <p className="text-xs text-slate-400 mt-0.5">Haz clic en ✏️ para renombrar cualquier categoría en línea.</p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex p-1 bg-slate-100 rounded-xl text-xs font-bold">
+                                                    <button onClick={() => { setCatViewType('Gasto'); setEditingCat(null); }}
+                                                        className={`px-4 py-1.5 rounded-lg transition-all ${catViewType === 'Gasto' ? 'bg-white text-rose-600 shadow' : 'text-slate-500'}`}>
+                                                        Gastos ({presetCategories.Gasto.length + customCategories.Gasto.length})
+                                                    </button>
+                                                    <button onClick={() => { setCatViewType('Ingreso'); setEditingCat(null); }}
+                                                        className={`px-4 py-1.5 rounded-lg transition-all ${catViewType === 'Ingreso' ? 'bg-white text-teal-600 shadow' : 'text-slate-500'}`}>
+                                                        Ingresos ({presetCategories.Ingreso.length + customCategories.Ingreso.length})
+                                                    </button>
+                                                </div>
+                                                <button onClick={handleRestoreDefaults} title="Restaurar preestablecidas"
+                                                    className="p-2 rounded-xl bg-amber-50 text-amber-600 hover:bg-amber-100 transition-all" >
+                                                    <AppIcon name="rotate-ccw" size={16} />
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="divide-y divide-slate-100">
+
+                                            {/* ── Sección Preestablecidas ── */}
+                                            <div className="px-5 py-2.5 bg-slate-50 flex justify-between items-center">
+                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                                    <AppIcon name="settings" size={12} /> Preestablecidas del sistema
+                                                    <span className="bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full ml-1">{presetCategories[catViewType].length}</span>
+                                                </span>
+                                                <span className="text-[9px] text-slate-400 font-medium">Editables y eliminables</span>
+                                            </div>
+
+                                            {presetCategories[catViewType].length === 0 && (
+                                                <div className="px-5 py-6 text-center">
+                                                    <p className="text-xs text-slate-400 italic">No hay categorías preestablecidas de {catViewType === 'Gasto' ? 'Gastos' : 'Ingresos'}.</p>
+                                                    <button onClick={handleRestoreDefaults}
+                                                        className="mt-2 text-xs text-amber-600 font-bold hover:underline">
+                                                        Restaurar categorías originales →
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            {presetCategories[catViewType].map((cat, idx) => {
+                                                const isEditing = editingCat && editingCat.oldName === cat && editingCat.isPreset && editingCat.type === catViewType;
+                                                return (
+                                                    <div key={cat + idx}
+                                                        className={`px-5 py-3 flex items-center gap-3 group transition-colors ${isEditing ? 'bg-teal-50/40' : 'hover:bg-slate-50'}`}>
+                                                        <span className={`w-2 h-2 rounded-full shrink-0 ${catViewType === 'Gasto' ? 'bg-rose-400' : 'bg-teal-400'}`} />
+
+                                                        {isEditing ? (
+                                                            <>
+                                                                <input
+                                                                    autoFocus
+                                                                    type="text"
+                                                                    value={editingCat.newName}
+                                                                    onChange={e => setEditingCat(prev => ({ ...prev, newName: e.target.value }))}
+                                                                    onKeyDown={e => { if (e.key === 'Enter') handleEditSave(); if (e.key === 'Escape') setEditingCat(null); }}
+                                                                    className="flex-1 px-3 py-1.5 border-2 border-teal-400 rounded-lg text-sm font-semibold text-slate-800 bg-white outline-none"
+                                                                />
+                                                                <button onClick={handleEditSave}
+                                                                    className="p-1.5 bg-teal-500 text-white rounded-lg hover:bg-teal-600 shrink-0" title="Guardar (Enter)">
+                                                                    <AppIcon name="check" size={14} />
+                                                                </button>
+                                                                <button onClick={() => setEditingCat(null)}
+                                                                    className="p-1.5 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 shrink-0" title="Cancelar (Esc)">
+                                                                    <AppIcon name="x" size={14} />
+                                                                </button>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <span className="flex-1 font-semibold text-slate-700 text-sm">{cat}</span>
+                                                                <span className="text-[9px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full font-bold uppercase hidden sm:inline">Sistema</span>
+                                                                <button
+                                                                    onClick={() => setEditingCat({ type: catViewType, oldName: cat, newName: cat, isPreset: true })}
+                                                                    className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-all" title="Renombrar">
+                                                                    <AppIcon name="pencil" size={14} />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDeletePreset(cat, catViewType)}
+                                                                    className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title="Eliminar">
+                                                                    <AppIcon name="trash-2" size={14} />
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+
+                                            {/* ── Sección Personalizadas ── */}
+                                            <div className="px-5 py-2.5 bg-slate-50 flex justify-between items-center">
+                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                                    <AppIcon name="user" size={12} /> Creadas por ti
+                                                    <span className="bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full ml-1">{customCategories[catViewType].length}</span>
+                                                </span>
+                                                <span className="text-[9px] text-slate-400 font-medium">Renombrables y eliminables</span>
+                                            </div>
+
+                                            {customCategories[catViewType].length === 0 ? (
+                                                <div className="px-5 py-6 text-center text-xs text-slate-400 italic">
+                                                    No tienes categorías personalizadas de {catViewType === 'Gasto' ? 'Gastos' : 'Ingresos'} todavía.
+                                                    Crea una con el formulario de arriba.
+                                                </div>
+                                            ) : (
+                                                customCategories[catViewType].map((cat, idx) => {
+                                                    const isEditing = editingCat && editingCat.oldName === cat && !editingCat.isPreset && editingCat.type === catViewType;
+                                                    return (
+                                                        <div key={cat + idx}
+                                                            className={`px-5 py-3 flex items-center gap-3 group transition-colors ${isEditing ? 'bg-teal-50/40' : 'hover:bg-slate-50'}`}>
+                                                            <span className={`w-2 h-2 rounded-full shrink-0 ${catViewType === 'Gasto' ? 'bg-rose-300' : 'bg-teal-300'}`} />
+
+                                                            {isEditing ? (
+                                                                <>
+                                                                    <input
+                                                                        autoFocus
+                                                                        type="text"
+                                                                        value={editingCat.newName}
+                                                                        onChange={e => setEditingCat(prev => ({ ...prev, newName: e.target.value }))}
+                                                                        onKeyDown={e => { if (e.key === 'Enter') handleEditSave(); if (e.key === 'Escape') setEditingCat(null); }}
+                                                                        className="flex-1 px-3 py-1.5 border-2 border-teal-400 rounded-lg text-sm font-semibold text-slate-800 bg-white outline-none"
+                                                                    />
+                                                                    <button onClick={handleEditSave}
+                                                                        className="p-1.5 bg-teal-500 text-white rounded-lg hover:bg-teal-600 shrink-0">
+                                                                        <AppIcon name="check" size={14} />
+                                                                    </button>
+                                                                    <button onClick={() => setEditingCat(null)}
+                                                                        className="p-1.5 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 shrink-0">
+                                                                        <AppIcon name="x" size={14} />
+                                                                    </button>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <span className="flex-1 font-semibold text-slate-700 text-sm">{cat}</span>
+                                                                    <span className="text-[9px] bg-teal-50 text-teal-500 px-2 py-0.5 rounded-full font-bold uppercase hidden sm:inline">Personalizada</span>
+                                                                    <button
+                                                                        onClick={() => setEditingCat({ type: catViewType, oldName: cat, newName: cat, isPreset: false })}
+                                                                        className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-all" title="Renombrar">
+                                                                        <AppIcon name="pencil" size={14} />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => triggerDeleteCategory(cat, catViewType)}
+                                                                        className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title="Eliminar">
+                                                                        <AppIcon name="trash-2" size={14} />
+                                                                    </button>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })
+                                            )}
+                                        </div>
+
+                                        {/* Footer con totales */}
+                                        <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
+                                            <span className="text-xs text-slate-500 font-medium">
+                                                Total {catViewType === 'Gasto' ? 'Gastos' : 'Ingresos'}: <strong className="text-slate-700">{mergedCategories[catViewType].length} categorías activas</strong>
+                                            </span>
+                                            <span className="text-[10px] text-slate-400">
+                                                {presetCategories[catViewType].length} sistema · {customCategories[catViewType].length} personalizadas
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                        </main>
+
+                        {/* Barra de Navegación Inferior (Móvil) */}
+                        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around items-center px-1 pt-2 pb-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-40">
+                            <button onClick={() => setActiveTab('dashboard')} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${activeTab === 'dashboard' ? 'text-teal-600 bg-teal-50' : 'text-slate-400'}`}>
+                                <AppIcon name="pie-chart" size={20} /><span className="text-[9px] font-bold">Resumen</span>
+                            </button>
+                            <button onClick={() => setActiveTab('history')} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${activeTab === 'history' ? 'text-teal-600 bg-teal-50' : 'text-slate-400'}`}>
+                                <AppIcon name="list" size={20} /><span className="text-[9px] font-bold">Historial</span>
+                            </button>
+                            <button onClick={() => setActiveTab('add')} className="flex flex-col items-center justify-center px-3 py-2 bg-teal-600 text-white rounded-2xl shadow-lg -mt-4 ring-4 ring-white">
+                                <AppIcon name="plus-circle" size={22} /><span className="text-[9px] font-bold mt-0.5">Nuevo</span>
+                            </button>
+                            <button onClick={() => setActiveTab('budget')} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${activeTab === 'budget' ? 'text-teal-600 bg-teal-50' : 'text-slate-400'}`}>
+                                <AppIcon name="calendar" size={20} /><span className="text-[9px] font-bold">Presp.</span>
+                            </button>
+                            <button onClick={() => setActiveTab('cash')} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${activeTab === 'cash' ? 'text-teal-600 bg-teal-50' : 'text-slate-400'}`}>
+                                <AppIcon name="wallet" size={20} /><span className="text-[9px] font-bold">Efectivo</span>
+                            </button>
+                            <button onClick={() => setActiveTab('categories')} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl transition-all ${activeTab === 'categories' ? 'text-teal-600 bg-teal-50' : 'text-slate-400'}`}>
+                                <AppIcon name="tag" size={20} /><span className="text-[9px] font-bold">Categ.</span>
+                            </button>
+                        </nav>
+
+                    </div>
+                );
+            }
+
+            // Renderizar la aplicación de React en el nodo root
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(<MainApp />);
+        }
+    </script>
+</body>
+</html>
