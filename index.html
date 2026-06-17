@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Balance - Control de Finanzas Personales</title>
+
+    <!-- Fuentes Balance: Inter (UI) + JetBrains Mono (números) + Material Symbols -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'wf-bg':       '#f8f9ff',
+                        'wf-surface':   '#ffffff',
+                        'wf-surface-lo':'#eff4ff',
+                        'wf-surface-md':'#e5eeff',
+                        'wf-surface-hi':'#dce9ff',
+                        'wf-border':    '#c6c6cd',
+                        'wf-text':      '#0b1c30',
+                        'wf-text-soft': '#45464d',
+                        'wf-green':     '#006c49',
+                        'wf-green-lt':  '#6cf8bb',
+                        'wf-green-bg':  '#e6fef4',
+                        'wf-dark':      '#131b2e',
+                        'wf-error':     '#ba1a1a',
+                        'wf-error-bg':  '#ffdad6',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+                        mono: ['JetBrains Mono', 'ui-monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Lucide Icons para toda la iconografía de la app -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- React y ReactDOM desde CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Babel para compilar JSX en el navegador en tiempo real -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Importación de SDKs de Firebase v11.6.1 (Auth y Firestore) con salvaguarda robusta -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInWithEmailAndPassword, 
+            createUserWithEmailAndPassword, 
+            signOut, 
+            onAuthStateChanged,
+            sendPasswordResetEmail,
+            updatePassword,
+            reauthenticateWithCredential,
+            EmailAuthProvider,
+            GoogleAuthProvider,
+            signInWithPopup,
+            updateProfile
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            collection, 
+            addDoc, 
+            onSnapshot, 
+            query, 
+            deleteDoc, 
+            doc, 
+            setDoc,
+            getDoc
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        window.FirebaseSDK = {
+            initializeApp, getAuth,
+            signInWithEmailAndPassword, createUserWithEmailAndPassword,
+            signOut, onAuthStateChanged,
+            sendPasswordResetEmail, updatePassword,
+            reauthenticateWithCredential, EmailAuthProvider,
+            GoogleAuthProvider, signInWithPopup,
+            updateProfile,
+            getFirestore, collection, addDoc, onSnapshot,
+            query, deleteDoc, doc, setDoc, getDoc
+        };
+    </script>
+
+    <style>
+        /* Balance – Design System */
+        body { font-family: 'Inter', sans-serif; }
+        .font-mono-data { font-family: 'JetBrains Mono', monospace; font-weight: 500; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            font-size: 24px; line-height: 1; display: inline-flex; align-items: center;
+        }
+        .mat-fill { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+
+        .animate-fade-in {
+            animation: fadeIn 0.2s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #c6c6cd; border-radius: 99px; }
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+    </style>
+</head>
+<body class="bg-[#f8f9ff] text-[#0b1c30] min-h-screen font-sans">
+
+    <!-- Nodo principal donde se montará la App de React -->
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Esperamos a que los SDKs de Firebase o el entorno global estén disponibles
+        const checkFirebaseInterval = setInterval(() => {
+            if (window.FirebaseSDK) {
+                clearInterval(checkFirebaseInterval);
+                initReactApplication();
+            }
+        }, 100);
+
+        function initReactApplication() {
+            const { useState, useEffect, useMemo, useRef } = React;
+            const { 
+                initializeApp, getAuth, signInWithEmailAndPassword, 
+                createUserWithEmailAndPassword, signOut, onAuthStateChanged, 
+                sendPasswordResetEmail, updatePassword, reauthenticateWithCredential,
+                EmailAuthProvider, GoogleAuthProvider, signInWithPopup, updateProfile,
+                getFirestore, collection, addDoc, onSnapshot, query, deleteDoc, doc, setDoc, getDoc
+            } = window.FirebaseSDK;
+
+            // ═══════════════════════════════════════════════════════════════
+            // 🔧  CONFIGURACIÓN DE FIREBASE — EDITA ESTA SECCIÓN
+            //     Reemplaza cada valor con los datos de tu proyecto Firebase.
+            //     Consola Firebase → ⚙️ Project Settings → Your apps → Config
+            //     Después de editar, guarda y sube el archivo a Netlify.
+            // ═══════════════════════════════════════════════════════════════
+            const FIREBASE_CONFIG = {
+                apiKey:            "AIzaSyAWKe1e_sPdTlGjP8CqXSPo-9dQItu2ScE",
+                authDomain:        "finanzas-personales-b5983.firebaseapp.com",
+                projectId:         "finanzas-personales-b5983",
+                storageBucket:     "finanzas-personales-b5983.firebasestorage.app",
+                messagingSenderId: "900800646807",
+                appId:             "1:900800646807:web:c8734bd2fdbfa59d4a63d2"
+            };
+            // ═══════════════════════════════════════════════════════════════
+        }
+    </script>
+</body>
+</html>
